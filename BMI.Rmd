@@ -1,0 +1,161 @@
+---
+date: "1 Sept 2024"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r}
+# Load the NHANES and dplyr packages
+library(NHANES)
+library(dplyr)
+
+# Load the NHANESraw data
+data("NHANESraw")
+glimpse(NHANESraw)
+```
+
+## 2. Visualize survey weight and strata variables
+<p>The glimpse() function reveals that the NHANESraw data contains many health measurement variables, including a sampling weight variable WTMEC2YR.</p?>
+
+<p>Since the NHANESraw data spans 4 years (2009–2012) and the sampling weights are based on 2 years of data, a new weight variable needs to be created to scale the sample across the full 4 years. Currently, the weights sum to 2 times the US population number. To adjust this, the 2-year weight is divided in half so that the total sum of the weights equals the US population.</p>
+
+<p>The NHANES data has oversampled some geographic regions and specific minority groups. Examining the distribution of sampling weights for each race reveals that Whites are undersampled and have higher weights, while oversampled groups like Black, Mexican, and Hispanic individuals have lower weights, since each sampled person in these minority groups represents fewer US people.</p>
+```{r}
+# Load the ggplot2 package
+library(ggplot2)
+
+# Use mutate to create a 4-year weight variable and call it WTMEC4YR
+NHANESraw <- NHANESraw %>% mutate(WTMEC4YR = WTMEC2YR/2)
+
+# Calculate the sum of this weight variable
+NHANESraw %>% summarize(sum(WTMEC4YR))
+
+# Plot the sample weights using boxplots, with Race1 on the x-axis
+ggplot(NHANESraw, aes(x = Race1, y = WTMEC4YR)) + geom_boxplot()
+```
+## 3. Specify the survey design
+<p>The survey package will be used to specify the complex survey design that will be applied in later analyses. It is essential to specify the design so that the sampling weights and design are used correctly in the statistical models.</p>
+
+<p>The NHANESraw data includes a strata variable SDMVSTRA, and a cluster ID variable (also known as a primary sampling unit, PSU), SDMVPSU, that accounts for the design effects of clustering. These clusters (PSUs) are nested within strata.</p>
+```{r}
+# Load the survey package
+library(survey)
+
+# Specify the survey design
+nhanes_design <- svydesign(
+    data = NHANESraw, 
+    strata = ~SDMVSTRA, 
+    id = ~SDMVPSU, 
+    nest = TRUE, 
+    weights = ~WTMEC4YR)
+
+# Print a summary of this design
+summary(nhanes_design)
+```
+## 4. Subset the data
+<p>Analysis of survey data requires careful consideration of the sampling design and weights at every step. Something as simple as filtering the data becomes complicated when weights are involved.</p>
+
+<p>When examining a subset of the data (i.e., the subpopulation of adult Hispanics with diabetes, or pregnant women), it must be explicitly specified in the design. Simply removing that subset of the data through filtering the raw data is not appropriate because the survey weights will no longer be correct and will not add up to the full US population.</p>
+
+<p>BMI categories differ for children and young adults younger than 20, so the data will be subsetted to only analyze adults of at least 20 years of age.</p>
+```{r}
+# Select adults of Age >= 20 with subset
+nhanes_adult <- subset(nhanes_design, Age >= 20)
+
+# Print a summary of this subset
+summary(nhanes_adult)
+
+# Compare the number of observations in the full data to the adult data
+nrow(nhanes_design)
+```
+## 5. Visualizing BMI
+<p>svydesign() is utilized to structure the survey data appropriately, but how does this contribute to understanding the full US population? Through survey methods, the sampling weights can be used to estimate the true distributions of measurements within the entire population. This approach is effective for calculating various statistics such as means, proportions, and standard deviations.</p>
+
+<p>Survey methods will be used to estimate the average BMI in the US adult population and to create a weighted histogram of the distribution.</p>
+```{r}
+# Calculate the mean BMI in NHANESraw
+bmi_mean_raw <- NHANESraw %>% 
+    filter(Age >= 20) %>%
+    summarize(mean(BMI, na.rm=TRUE))
+bmi_mean_raw
+
+# Calculate the survey-weighted mean BMI of US adults
+bmi_mean <- svymean(~BMI, design = nhanes_adult, na.rm = TRUE)
+bmi_mean
+
+# Draw a weighted histogram of BMI in the US population
+NHANESraw %>% 
+  filter(Age >= 20) %>%
+    ggplot(mapping = aes(x = BMI, weight = WTMEC4YR)) + 
+    geom_histogram()+
+    geom_vline(xintercept = coef(bmi_mean), color="red")
+```
+## 6. Is BMI lower in physically active people?
+<p>
+The distribution of BMI appears as expected, with most people under 40 kg/m<sup>2</sup> and a slight positive skewness due to a few individuals having much higher BMI. Now, the question of interest is whether the distribution of BMI differs between people who are physically active versus those who are not. This can be visually compared using a boxplot and formally tested for differences in mean BMI. </p>
+```{r}
+# Load the broom library
+library(broom)
+
+# Conduct a t-test comparing mean BMI between physically active status
+survey_ttest <- svyttest(BMI~PhysActive, design = nhanes_adult)
+
+# Use broom to show the tidy results
+tidy(survey_ttest)
+```
+## 7. Could there be confounding by smoking? (part 1)
+<p>
+The relationship between physical activity and BMI is likely not as straightforward as "if you exercise, your BMI will lower." Many other lifestyle or demographic variables could confound this relationship. Smoking status is one such variable. It raises questions such as whether someone who smokes is more or less likely to be physically active, and whether smokers are more likely to have higher or lower BMI. These relationships can be examined in the survey data</p>
+<p>
+First, the relationship between smoking and physical activity will be examined.</p>
+```{r}
+# Estimate the proportion who are physically active by current smoking status
+phys_by_smoke <- svyby(~PhysActive, by = ~SmokeNow, 
+                       FUN = svymean, 
+                       design = nhanes_adult, 
+                       keep.names = FALSE)
+
+# Print the table
+phys_by_smoke
+
+# Plot the proportions with y-label
+ggplot(data = phys_by_smoke, 
+       aes(y = PhysActiveYes, x = SmokeNow, fill = SmokeNow)) +
+    geom_col() +
+    ylab("Proportion Physically Active")
+```
+## 8. Could there be confounding by smoking? (part 2)
+<p>Now, the relationship between smoking and BMI will be examined.</p>
+```{r}
+# Estimate mean BMI by current smoking status
+BMI_by_smoke <- svyby(~BMI, by = ~SmokeNow, 
+      FUN = svymean, 
+      design = nhanes_adult, 
+      na.rm = TRUE)
+BMI_by_smoke
+
+```
+## 9. Add smoking in the mix
+<p>It was observed that people who smoke are less likely to be physically active and have a lower BMI on average. Additionally, people who are not physically active tend to have a higher BMI on average. These seemingly conflicting associations prompt a closer examination of how these factors interact. To gain a better understanding, BMI can be compared by physical activity, stratified by smoking status.</p>
+<p>Previously, a simple t-test was used to compare mean BMI between physically active and non-physically active people. To adjust for smoking status, as well as other potential confounders or predictors of BMI, a linear regression model with multiple independent variables can be utilized. When dealing with survey data, a weighted linear regression method, which is a special case of generalized linear models (GLMs), is employed.</p
+
+```{r}
+# Fit a multiple regression model
+mod1 <- svyglm(BMI ~ PhysActive*SmokeNow, design = nhanes_adult)
+# Tidy the model results
+tidy_mod1 <- tidy(mod1)
+tidy_mod1
+
+# Calculate expected mean difference in BMI for activity within non-smokers
+diff_non_smoke <- tidy_mod1 %>% 
+    filter(term=="PhysActiveYes") %>% 
+    select(estimate)
+diff_non_smoke
+
+# Calculate expected mean difference in BMI for activity within smokers
+diff_smoke <- tidy_mod1 %>% 
+    filter(term%in%c("PhysActiveYes","PhysActiveYes:SmokeNowYes")) %>% 
+    summarize(estimate = sum(estimate))
+diff_smoke
+```
