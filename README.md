@@ -1,6 +1,5 @@
 # Introduction 
 Survey of BMI and physical activity
-<p><img src="https://assets.datacamp.com/production/project_677/img/Activity-Flexibility-Wife-Women-Bending-Stretching-3098228.jpg" alt="activity"></p>
 
 <p>Surveys are given to a carefully selected sample of people with the goal of generalizing the results to a much larger population.</p>
 
