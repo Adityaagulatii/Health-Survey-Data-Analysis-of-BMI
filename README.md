@@ -8,7 +8,7 @@ Survey of BMI and physical activity
 <p>Depending on the sampling design, each person has a sampling weight that quantifies how many people in the larger population their data is meant to represent. In this notebook, survey methods that use sampling weights are applied to estimate and model relationships between measurements.</p>
 
 # Analysis 
-NHANES data is available as a library in R. This analysis focuses on a common health indicator, Body Mass Index (BMI kg/m<sup>2</sup>), and how it relates to physical activity. The data will be visualized and survey-weighted regression will be used to test for associations.[Analysis](notebook_final.ipynb)
+NHANES data is available as a library in R. This analysis focuses on a common health indicator, Body Mass Index (BMI kg/m<sup>2</sup>), and how it relates to physical activity. The data will be visualized and survey-weighted regression will be used to test for associations.The alaysis can be found here [Analysis](notebook_final.ipynb).
 
 # Conclusion
 <p>A linear regression model was fitted where the association of physical activity with BMI could vary by smoking status. The interaction between physical activity and smoking has a small p-value, suggesting that the association does indeed vary by smoking status. The difference between physically active and non-physically active individuals is larger in magnitude among the non-smoker population.</p>
